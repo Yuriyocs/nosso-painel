@@ -789,13 +789,12 @@ html, body { max-width: 100%; overflow-x: hidden; }
 @supports (overflow: clip) { html, body { overflow-x: clip; } }
 .shell, .main, .page { min-width: 0; max-width: 100%; }
 .page > *, .home-grid > *, .cols > *, .board > *, .cartoes-grid > *, .tf-grid > *, .card, .hero, .block { min-width: 0; }
-.home-grid { grid-template-columns: minmax(0, 1fr); }
-.cols { grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 1180px) { .cols { grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); } }
-.hero-stats { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); justify-content: stretch; }
+@media (max-width: 959px) { .home-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1179px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) { .hero-stats { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); justify-content: stretch; } }
 .hero-stats dd { white-space: normal; overflow-wrap: anywhere; }
 .hero-value { font-size: clamp(1.9rem, 8.5vw, 3.4rem); overflow-wrap: anywhere; }
-.page:not(.home) > .hero .hero-stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+@media (max-width: 700px) { .page:not(.home) > .hero .hero-stats { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); } }
 .row-title, .row-meta, .note-item-title, .card h3, .section-head h3, .fat-total, .side-big { overflow-wrap: anywhere; }
 .row-body { min-width: 0; }
 .mchart { min-width: 0; }
