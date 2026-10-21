@@ -1,0 +1,29 @@
+# Opcional. O plano gratuito do Supabase pausa o projeto depois de 7 dias sem uso.
+# Este robô dá uma "cutucada" duas vezes por semana para ele não pausar nas férias.
+#
+# Para ativar: no GitHub, Settings > Secrets and variables > Actions > New repository secret
+#   SUPABASE_URL       (a mesma URL do config.js)
+#   SUPABASE_ANON_KEY  (a mesma chave anon do config.js)
+name: Manter Supabase ativo
+
+on:
+  schedule:
+    - cron: "17 9 * * 1,4"
+  workflow_dispatch:
+
+jobs:
+  cutucar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar a API do Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "Secrets não configurados; nada a fazer."; exit 0
+          fi
+          curl -fsS "$SUPABASE_URL/rest/v1/perfis?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" > /dev/null
+          echo "Supabase respondeu."
