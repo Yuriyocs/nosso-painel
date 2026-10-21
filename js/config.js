@@ -11,8 +11,8 @@
  * Nunca coloque aqui a chave "service_role".
  */
 window.CONFIG = {
-  SUPABASE_URL: "",
-  SUPABASE_ANON_KEY: "",
+  SUPABASE_URL: "https://iasgmiodgjfzuhhvdgva.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_iXi8NzeVEQ8wIdcN0gEtoA_7IubKbXa",
 
   // Os dois nomes que aparecem no painel (nesta ordem: azul e rosa).
   NOMES: ["Yuri", "Lohrane"],
