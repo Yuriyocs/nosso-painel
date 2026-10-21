@@ -238,6 +238,50 @@
   });
 
   /* ---------- ajustes ---------- */
+  /* ---------- apagar dados por área ---------- */
+  const AREAS_LIMPAR = [
+    ['lancamentos', 'Finanças: lançamentos do mês (entradas, saídas, faturas importadas)', ['lancamentos']],
+    ['fixas', 'Finanças: contas fixas', ['fixas']],
+    ['parcelados', 'Finanças: compras parceladas', ['parcelados']],
+    ['cofres', 'Finanças: guardado (cofres)', ['cofres']],
+    ['cartoes', 'Finanças: cartões e bancos criados', ['cartoes', 'bancos']],
+    ['orcamentos', 'Finanças: orçamento por categoria', ['orcamentos']],
+    ['tarefas', 'Tarefas', ['tarefas']],
+    ['compras', 'Compras (itens e listas criadas)', ['compras', 'listas_compra']],
+    ['metas', 'Metas do casal', ['metas']],
+    ['notas', 'Notas', ['notas']],
+    ['atividades', 'Notificações (histórico)', ['atividades']],
+  ];
+  const contar = tabs => tabs.reduce((a, t) => a + (DB.cache[t] || []).length, 0);
+  function limparPorArea() {
+    const corpo = sel => html`<p class="hint">Marque o que quer apagar. O calendário mostra o que está em Finanças e Tarefas, então esvazia junto com elas.</p>
+      <div class="limpar-lista">${AREAS_LIMPAR.map(([id, nome, tabs]) => html`<label class="fat-toggle slim"><input type="checkbox" data-lim="${id}" ${sel.has(id) ? 'checked' : ''}><span>${nome} <small>(${contar(tabs)} ${contar(tabs) === 1 ? 'registro' : 'registros'})</small></span></label>`)}</div>
+      <div class="modal-actions"><button type="button" class="btn ghost" data-lim-todas>Marcar todas</button>
+        <button type="button" class="btn danger push-right" data-lim-ok ${sel.size ? '' : 'disabled'}>Apagar ${sel.size ? sel.size + (sel.size === 1 ? ' área' : ' áreas') : ''}</button></div>`;
+    const sel = new Set();
+    openModal({
+      title: 'Apagar dados por área', body: corpo(sel),
+      onMount(api) {
+        const redesenhar = () => { api.body.innerHTML = String(corpo(sel)); };
+        api.body.addEventListener('change', e => { const id = e.target.dataset && e.target.dataset.lim; if (!id) return; e.target.checked ? sel.add(id) : sel.delete(id); redesenhar(); });
+        api.body.addEventListener('click', async e => {
+          if (e.target.closest('[data-lim-todas]')) { AREAS_LIMPAR.forEach(a => sel.add(a[0])); redesenhar(); return; }
+          if (!e.target.closest('[data-lim-ok]') || !sel.size) return;
+          const escolhidas = AREAS_LIMPAR.filter(a => sel.has(a[0]));
+          const tabs = escolhidas.flatMap(a => a[2]);
+          const total = contar(tabs);
+          const ok = await confirmDialog({ title: 'Apagar estes dados?', message: `Vai apagar ${total} ${total === 1 ? 'registro' : 'registros'} de: ${escolhidas.map(a => a[1].split(' (')[0]).join('; ')}. Isso vale para os dois (Yuri e Lohrane). Antes, o painel baixa uma cópia de segurança para você poder voltar atrás.`, confirmLabel: 'Apagar', danger: true });
+          if (!ok) return;
+          baixarBackup('antes-de-apagar');
+          try {
+            await DB.limpar(tabs);
+            if (!sel.has('atividades')) DB.log('geral', 'apagou dados: ' + escolhidas.map(a => a[1].split(':').pop().split(' (')[0].trim().toLowerCase()).join(', '));
+            api.close(); desenhar(false); toast('Dados apagados');
+          } catch (x) { console.error(x); toast('Não consegui apagar tudo. Recarregue a página e confira.', 'erro'); await DB.loadAll().catch(() => {}); DB._touch('*'); }
+        });
+      },
+    });
+  }
   function baixarBackup(sufixo) {
     const dados = { app: 'nosso-painel', exportado_em: new Date().toISOString(), por: DB.user.nome, tabelas: {} };
     Object.keys(DB.cache).forEach(t => { dados.tabelas[t] = DB.all(t); });
@@ -265,6 +309,9 @@
         <div class="stack"><button type="button" class="btn ghost" data-ajuda>${icon('help', 16)}Central de ajuda: como usar cada tela</button>
         <button type="button" class="btn ghost" data-atalhos>${icon('keyboard', 16)}Atalhos do teclado (tecla ?)</button></div></div>
       <p class="hint">Dica: no celular, abra o painel no navegador e escolha "Adicionar à tela inicial". Ele vira um app.</p>
+      <div class="field"><span class="label">Apagar dados</span>
+        <button type="button" class="btn danger-ghost" data-limpar>${icon('trash', 16)}Apagar por área (escolher o que)</button>
+        <p class="hint">Escolha só o que quer zerar: Finanças, Tarefas, Compras... O painel baixa uma cópia antes.</p></div>
       ${DB.mode === 'demo' ? html`<div class="field"><span class="label">Dados de demonstração</span>
         <div class="stack"><button type="button" class="btn ghost" data-reset="exemplo">Restaurar exemplos</button>
         <button type="button" class="btn danger-ghost" data-reset="vazio">Apagar tudo e começar do zero</button></div></div>` : ''}
@@ -295,6 +342,7 @@
             if (ok) { DB.resetDemo(!vazio); api.close(); desenhar(false); toast(vazio ? 'Tudo limpo' : 'Exemplos restaurados'); }
             return;
           }
+          if (e.target.closest('[data-limpar]')) { api.close(); limparPorArea(); return; }
           if (e.target.closest('[data-backup]')) { baixarBackup(); toast('Backup baixado'); return; }
           if (e.target.closest('[data-ajuda]')) { api.close(); global.Ajuda.central(); return; }
           if (e.target.closest('[data-atalhos]')) { api.close(); global.Atalhos.ajuda(); return; }

@@ -290,6 +290,23 @@
       if (this.mode === 'demo') this._persist('*'); else this._touch('*');
       return v;
     },
+    /* apagar todos os registros de algumas tabelas (e o que depende delas) */
+    async limpar(tabelas) {
+      const FILHAS = { fixas: ['fixas_pagas'], parcelados: ['parcelas_pagas'], cofres: ['cofre_movs'], metas: ['meta_passos'] };
+      const ordem = ['fixas_pagas', 'parcelas_pagas', 'cofre_movs', 'meta_passos', 'lancamentos', 'fixas', 'parcelados', 'cofres', 'metas', 'tarefas', 'notas', 'compras', 'listas_compra', 'cartoes', 'bancos', 'orcamentos', 'atividades'];
+      const alvo = new Set(tabelas);
+      tabelas.forEach(t => (FILHAS[t] || []).forEach(f => alvo.add(f)));
+      const ts = ordem.filter(t => alvo.has(t));
+      if (this.mode === 'cloud') {
+        for (const t of ts) {
+          const { error } = await this.sb.from(t).delete().not('id', 'is', null);
+          if (error && !OPCIONAIS.includes(t)) throw error;
+        }
+      }
+      ts.forEach(t => { this.cache[t] = []; });
+      if (this.mode === 'demo') this._persist('*'); else this._touch('*');
+      return ts;
+    },
     resetDemo(comExemplos) {
       const d = comExemplos ? seed() : Object.fromEntries(TABLES.map(t => [t, []]));
       localStorage.setItem(LS_DATA, JSON.stringify(d));

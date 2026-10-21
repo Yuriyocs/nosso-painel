@@ -56,7 +56,7 @@
   function montar(fat, st) {
     return fat.itens.map((it, i) => ({
       i, sel: true, desc: it.desc, valor: it.valor, credito: it.credito, parcela: it.parcela, dm: it.dm,
-      dataCompra: it.data, fixa: !!it.dataFixa,
+      dataCompra: it.data, fixa: !!it.dataFixa, pagamento: !!it.credito && /\b(pagto|pgto|pagamento|pag\.)/i.test(it.desc),
       categoria: it.credito ? '' : (global.Financas.categoriaDe(it.desc) || sugerirCategoria(it.desc)), pessoa: st.pessoa, tocado: false, dup: null,
     }));
   }
@@ -145,7 +145,7 @@
           <button type="button" class="seg-btn${st.dataModo === 'venc' ? ' on' : ''}" data-g="dataModo" data-v="venc" aria-pressed="${st.dataModo === 'venc'}">Vencimento da fatura</button>
           <button type="button" class="seg-btn${st.dataModo === 'compra' ? ' on' : ''}" data-g="dataModo" data-v="compra" aria-pressed="${st.dataModo === 'compra'}">Dia da compra</button>
         </div></div>
-      <p class="hint">${st.dataModo === 'venc' ? 'Tudo entra no mês em que a fatura é paga. Bom para ver quanto sai do bolso em cada mês.' : 'Cada compra entra no dia em que foi feita, então pode cair em meses anteriores.'}</p>
+      <p class="hint">${st.dataModo === 'venc' ? 'Tudo entra no mês em que a fatura é paga. Bom para ver quanto sai do bolso em cada mês.' : 'Cada compra entra no dia em que foi feita, então pode cair em meses anteriores e o total do mês deixa de bater com o que foi pago na fatura. Para conferir o quanto saiu do bolso, prefira "Vencimento da fatura".'}</p>
 
       ${nParcelados ? html`<label class="fat-toggle"><input type="checkbox" data-g="futuras" ${st.futuras ? 'checked' : ''}>
         <span><b>Criar as parcelas dos próximos meses</b><br><small>${st.futuras
@@ -168,7 +168,8 @@
           <div class="fat-meta">
             <span>${r.dm}</span>
             ${r.parcela ? html`<span class="badge">parcela ${r.parcela.p}/${r.parcela.n}${viraParcelado(r, st) && futuras(r) ? ` · +${futuras(r)} futuras` : ''}</span>` : ''}
-            ${r.credito ? html`<span class="badge in">crédito / pagamento</span>` : ''}
+            ${r.pagamento ? html`<span class="badge warn">pagamento da fatura anterior</span>` : r.credito ? html`<span class="badge in">crédito / estorno</span>` : ''}
+            ${r.pagamento && r.sel ? html`<span class="fat-aviso">Não é entrada de dinheiro: é o pagamento da fatura passada. Marcar aumenta as entradas do mês sem ter entrado nada.</span>` : ''}
             ${r.dup ? html`<span class="badge ${r.dup.nivel === 'igual' ? 'warn' : ''}">${r.dup.texto}</span>` : ''}
           </div>
           ${!r.credito ? html`<div class="fat-sel">
