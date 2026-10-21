@@ -705,7 +705,7 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 8px; text-align: cent
 .lim { display: grid; gap: 6px; } .lim-line { display: flex; justify-content: space-between; gap: 8px; font-size: .9375rem; font-weight: 600; }
 .prox { margin: 0; }
 .fat-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.fat-list { margin-top: 2px; max-height: 360px; overflow: auto; }
+.fat-list { margin-top: 2px; }
 .sem-cartao { margin-top: 14px; }
 
 /* cadastro de banco e cor */
