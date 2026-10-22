@@ -31,7 +31,7 @@
   /* tira "Parcela 3/12", "- 1/2" ou "04/12" do fim do nome */
   function extrairParcela(desc) {
     desc = desc.replace(/^Pix no Cr[eé]dito\s*-\s*/i, '');
-    const pad = [/\s*-?\s*Parcela\s+(\d{1,2})\/(\d{1,2})\s*$/i, /\s+-\s+(\d{1,2})\/(\d{1,2})\s*$/, /\s*(\d{2})\/(\d{2})\s*$/];
+    const pad = [/\s*-?\s*Parcela\s+(\d{1,2})\/(\d{1,2})\s*$/i, /\s+-\s+(\d{1,2})\/(\d{1,2})\s*$/, /\s*(\d{2})\/(\d{2})\s*$/, /\s+(\d{1,2})\/(\d{1,2})\s*$/];
     for (let k = 0; k < pad.length; k++) {
       const m = desc.match(pad[k]);
       if (!m) continue;
@@ -58,7 +58,8 @@
     const linhasTxt = tudo.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
     if (/extrato conta \/ lan[cç]amentos/i.test(tudo) && /SALDO DO DIA/.test(tudo)) { out = extratoItau(linhasTxt); out.titular = textoPag[0] || ''; return out; }
     if (/EXTRATO DE CONTA/.test(tudo) && /DETALHE DOS MOVIMENTOS/.test(tudo)) { out = extratoSantander(linhasTxt); out.titular = linhasTxt.find(l => /^Nome:/i.test(l)) || ''; return out; }
-    if (/Nu Pagamentos|Nubank/i.test(tudo)) out = nubank(pages, tudo);
+    if (/Situa[cç][aã]o do Extrato/i.test(tudo) && /Bradesco/i.test(tudo)) out = bradescoAberta(pages, tudo);
+    else if (/Nu Pagamentos|Nubank/i.test(tudo)) out = nubank(pages, tudo);
     else if (/Bradesco/i.test(tudo)) out = bradesco(pages, tudo);
     else if (/Ita[uú]/i.test(tudo)) out = itau(pages, tudo);
     else out = { banco: null, venc: null, total: null, cartao: null, itens: [] };
@@ -95,6 +96,31 @@
       const t = TIPOS.find(([r]) => r.test(tipo)), rot = t ? t[1] : tipo;
       const comDet = det && !/^per[ií]odo/i.test(det) && !re.test(det) && !/^(segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo)/i.test(det);
       out.itens.push({ data: `${m[3]}-${m[2]}-${m[1]}`, desc: comDet ? `${rot} · ${det}` : rot, valor: toNum(m[5]), credito: m[4] !== '-', tipoOrig: tipo });
+    });
+    return out;
+  }
+
+  /* extrato do app "Bradesco Cartões" (fatura em aberto): cada compra tem uma linha "dd/mm  descrição  0,00  R$ 0,00  valor" */
+  function bradescoAberta(pages, tudo) {
+    const out = { banco: 'Bradesco', venc: null, total: null, cartao: null, itens: [], aberta: true };
+    const mt = tudo.match(/Total da fatura em real[\s.]*R ?\$ ?([\d.]+,\d{2})/i);
+    if (mt) out.total = toNum(mt[1]);
+    const mc = tudo.match(/X{4}\.X{4}\.X{4}\.(\d{4})/); if (mc) out.cartao = mc[1];
+    const re = /^(\d{2}\/\d{2}) (.*?)\s*(?:[\d.]+,\d{2} )?0,00 R ?\$ ?0,00 (-?[\d.]+,\d{2})$/;
+    pages.forEach(items => {
+      const ls = linhas(items).map(l => l.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim());
+      ls.forEach((l, i) => {
+        const m = l.match(re); if (!m) return;
+        let desc = m[2].replace(/\s*BRL$/, '').trim();
+        if (!desc) {                                  // descrição quebrada em duas linhas (nome acima, parcela abaixo)
+          const ant = (ls[i - 1] || '').replace(/\s*BRL$/, '').trim(), prox = ls[i + 1] || '';
+          if (ant && !/^[\d.,\-\s]+$/.test(ant) && !/^BRL$/.test(ant)) desc = ant;
+          const mp = prox.match(/^(\d{1,2}\/\d{1,2})\b/); if (desc && mp) desc += ' ' + mp[1];
+        }
+        if (!desc || /^SALDO ANTERIOR/i.test(desc)) return;
+        const neg = m[3].startsWith('-');
+        out.itens.push({ dm: m[1], desc, valor: toNum(m[3].replace('-', '')), credito: neg });
+      });
     });
     return out;
   }

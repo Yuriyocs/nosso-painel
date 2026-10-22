@@ -140,6 +140,7 @@
       </div>
       <div class="field"><span class="label">De quem é esta fatura</span>
         <div class="chips" role="group" aria-label="Pessoa">${K.PESSOAS.map(p => html`<button type="button" class="chip${st.pessoa === p ? ' on' : ''}" data-g="pessoa" data-v="${p}" aria-pressed="${st.pessoa === p}">${p}</button>`)}</div></div>
+      ${st.fat.aberta ? html`<p class="hint">Esta é uma <b>fatura em aberto</b> (ainda pode mudar até fechar). ${st.vencEstimado ? 'O vencimento foi calculado pelo cartão cadastrado: confira.' : 'Informe o vencimento da fatura.'} Quando a fatura fechar, importe a versão final: o que já foi lançado vem marcado e não duplica.</p>` : ''}
       <p class="hint">Cada compra entra no <b>mês em que foi feita</b> (é o gasto daquele mês). A fatura vence em <b>${st.venc ? dateLabel(st.venc) : 'o vencimento'}</b>: é quando o dinheiro sai da conta, e o painel já concilia isso sozinho.</p>
 
       ${nParcelados ? html`<label class="fat-toggle"><input type="checkbox" data-g="futuras" ${st.futuras ? 'checked' : ''}>
@@ -216,6 +217,8 @@
             st.fat = fat; st.banco = fat.banco || st.banco; st.venc = fat.venc || '';
             const t = U.norm(fat.titular || ''), nome = K.NOMES.find(n => t.includes(U.norm(n)));
             if (nome) st.pessoa = nome;
+            if (!st.venc && fat.aberta) { st.venc = global.Financas.faturaVenc(st.banco, st.pessoa, U.today()) || ''; st.vencEstimado = !!st.venc; }
+            if (st.venc) fat.itens.forEach(it => { if (!it.dataFixa && it.dm) it.data = global.FaturaParser.ano(it.dm, st.venc); });
             st.rows = montar(fat, st);
             marcarDuplicados(st); desenhar();
           } catch (e) {
