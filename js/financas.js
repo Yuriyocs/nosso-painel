@@ -307,7 +307,7 @@
         <h2 class="monthname" aria-live="polite">${monthLabel(mk)}</h2>
         <button type="button" class="icon-btn" data-act="fin:next" aria-label="Próximo mês">${icon('chevR')}</button>
         ${!atual ? html`<button type="button" class="btn ghost small" data-act="fin:hoje">Mês atual</button>` : ''}
-        <button type="button" class="btn ghost small push-right" data-act="fin:fatura">${icon('upload', 16)}Importar fatura</button>
+        <button type="button" class="btn ghost small push-right" data-act="fin:fatura">${icon('upload', 16)}Importar fatura ou extrato</button>
         <button type="button" class="btn ghost small" data-act="fin:csv" ${itens.length ? '' : 'disabled'}>${icon('download', 16)}Exportar</button>
       </div>
 
@@ -598,7 +598,7 @@
     const cats = st.tipo === 'entrada' ? K.CAT_ENTRADA : K.CAT_SAIDA;
     const seg = (campo, valor, rotulo, off, cls = '') => html`<button type="button" class="seg-btn ${cls}${st[campo] === valor ? ' on' : ''}" data-set="${campo}" data-v="${valor}" aria-pressed="${st[campo] === valor ? 'true' : 'false'}" ${off ? 'disabled' : ''}>${rotulo}</button>`;
     return html`<form class="form" novalidate data-entry>
-      ${!edit ? html`<button type="button" class="import-link" data-act="fin:fatura">${icon('upload', 16)}<span>Tem a fatura do cartão em PDF? <b>Importar de uma vez</b></span></button>` : ''}
+      ${!edit ? html`<button type="button" class="import-link" data-act="fin:fatura">${icon('upload', 16)}<span>Tem a fatura ou o extrato em PDF? <b>Importar de uma vez</b></span></button>` : ''}
       ${!parcelado ? html`<div class="field"><span class="label">Tipo</span>
         <div class="seg" role="group" aria-label="Tipo">${seg('tipo', 'saida', html`${icon('down', 14)}Saída`, false, 't-saida')}${seg('tipo', 'entrada', html`${icon('up', 14)}Entrada`, false, 't-entrada')}</div></div>` : ''}
       <div class="field"><span class="label">Frequência</span>

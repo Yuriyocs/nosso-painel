@@ -55,12 +55,48 @@
     const textoPag = pages.map(items => linhas(items).map(l => l.map(i => i.str).join(' ')).join('\n'));
     const tudo = textoPag.join('\n');
     let out;
+    const linhasTxt = tudo.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    if (/extrato conta \/ lan[cç]amentos/i.test(tudo) && /SALDO DO DIA/.test(tudo)) { out = extratoItau(linhasTxt); out.titular = textoPag[0] || ''; return out; }
+    if (/EXTRATO DE CONTA/.test(tudo) && /DETALHE DOS MOVIMENTOS/.test(tudo)) { out = extratoSantander(linhasTxt); out.titular = linhasTxt.find(l => /^Nome:/i.test(l)) || ''; return out; }
     if (/Nu Pagamentos|Nubank/i.test(tudo)) out = nubank(pages, tudo);
     else if (/Bradesco/i.test(tudo)) out = bradesco(pages, tudo);
     else if (/Ita[uú]/i.test(tudo)) out = itau(pages, tudo);
     else out = { banco: null, venc: null, total: null, cartao: null, itens: [] };
     out.titular = textoPag[0] || '';
     return finalizar(out);
+  }
+
+  /* ---------- extratos de conta corrente (movimentação) ---------- */
+  const NUM = '(-?\\d{1,3}(?:\\.\\d{3})*,\\d{2})';
+  function extratoItau(ls) {
+    const out = { tipo: 'extrato', banco: 'Itaú', itens: [], titular: '' };
+    const re = new RegExp('^(\\d{2})/(\\d{2})/(\\d{4}) (.+?) ' + NUM + '$');
+    const mp = ls.join('\n').match(/per[ií]odo de visualiza[cç][aã]o:\s*(\d{2})\/(\d{2})\/(\d{4}) at[eé] (\d{2})\/(\d{2})\/(\d{4})/i);
+    if (mp) out.periodo = [`${mp[3]}-${mp[2]}-${mp[1]}`, `${mp[6]}-${mp[5]}-${mp[4]}`];
+    ls.forEach(l => {
+      const m = l.match(re); if (!m) return;
+      if (/^SALDO DO DIA/i.test(m[4])) return;
+      const v = toNum(m[5].replace('-', ''));
+      if (!(v > 0)) return;
+      out.itens.push({ data: `${m[3]}-${m[2]}-${m[1]}`, desc: m[4], valor: v, credito: !m[5].startsWith('-') });
+    });
+    return out;
+  }
+  function extratoSantander(ls) {
+    const out = { tipo: 'extrato', banco: 'Santander', itens: [], titular: '' };
+    const re = /^(\d{2})\/(\d{2})\/(\d{4}) (-?)R ?\$ ?([\d.]+,\d{2}) (-?)R ?\$ ?([\d.]+,\d{2})$/;
+    const mp = ls.join('\n').match(/Per[ií]odo:\s*(\d{2})\/(\d{2})\/(\d{4}) a (\d{2})\/(\d{2})\/(\d{4})/);
+    if (mp) out.periodo = [`${mp[3]}-${mp[2]}-${mp[1]}`, `${mp[6]}-${mp[5]}-${mp[4]}`];
+    const TIPOS = [[/^pix/i, 'Pix'], [/boleto/i, 'Boleto'], [/sal[aá]rio/i, 'Salário'], [/^iof/i, 'IOF'], [/^juros/i, 'Juros']];
+    ls.forEach((l, i) => {
+      const m = l.match(re); if (!m) return;
+      const tipo = (ls[i - 1] || '').trim(), det = (ls[i + 1] || '').trim();
+      if (!tipo || re.test(tipo) || /^(data|detalhe)/i.test(tipo)) return;
+      const t = TIPOS.find(([r]) => r.test(tipo)), rot = t ? t[1] : tipo;
+      const comDet = det && !/^per[ií]odo/i.test(det) && !re.test(det) && !/^(segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo)/i.test(det);
+      out.itens.push({ data: `${m[3]}-${m[2]}-${m[1]}`, desc: comDet ? `${rot} · ${det}` : rot, valor: toNum(m[5]), credito: m[4] !== '-', tipoOrig: tipo });
+    });
+    return out;
   }
 
   function bradesco(pages, tudo) {

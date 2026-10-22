@@ -103,7 +103,7 @@
         <h2 class="monthname" aria-live="polite">${monthLabel(mk)}</h2>
         <button type="button" class="icon-btn" data-act="fin:next" aria-label="Próximo mês">${icon('chevR')}</button>
         ${!atual ? html`<button type="button" class="btn ghost small" data-act="fin:hoje">Mês atual</button>` : ''}
-        <button type="button" class="btn ghost small push-right" data-act="fin:fatura">${icon('upload', 16)}Importar fatura</button>
+        <button type="button" class="btn ghost small push-right" data-act="fin:fatura">${icon('upload', 16)}Importar fatura ou extrato</button>
         <button type="button" class="btn ghost small" data-act="fin:bancos">${icon('wallet', 16)}Bancos</button>
         <button type="button" class="btn primary small" data-act="fin:cartao-novo">${icon('plus', 16)}Novo cartão</button>
       </div>

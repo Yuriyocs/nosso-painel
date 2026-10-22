@@ -34,15 +34,15 @@
   /* ---------- categoria sugerida pelo nome ---------- */
   const REGRAS = [
     [/uber|99 ?ride|99ride|\*99|taxi|jetshr|jet patinetes|urentcar/, 'Transporte'],
-    [/supermerc|atacad|carrefour|assai|hortifruti|padaria|acougue/, 'Mercado'],
+    [/supermerc|atacad|carrefour|assai|hortifruti|padaria|acougue|\bsuper\b|mercad|padar/, 'Mercado'],
     [/\bifd\b|ifood|restaur|lanch|pizza|burger|cafe|cacau|doce/, 'Alimentação'],
     [/petlove|\bpet|racao/, 'Pets'],
     [/farm|drog|clinic|hospital|saude|wellhub|gympass|academia|laser/, 'Saúde'],
     [/udemy|curso|escola|faculdade|alura|duolingo/, 'Educação'],
     [/google|netflix|spotify|prime|disney|hbo|youtube|apple|icloud|kindle|membership/, 'Assinaturas'],
-    [/\bvivo\b|claro|\btim\b|energia|enel|cesan|escelsa|internet/, 'Contas (luz, água, internet)'],
+    [/\bvivo\b|claro|\btim\b|energia|enel|cesan|escelsa|internet|\bedp\b|cpfl|sabesp/, 'Contas (luz, água, internet)'],
     [/gol linhas|latam|azul|booking|hotel|airbnb/, 'Viagem'],
-    [/shopee|mercadolivre|amazon|magalu|aliexpress|shein|americanas|eletro|wepink/, 'Compras'],
+    [/shopee|shpp|amazo|mercadolivre|amazon|magalu|aliexpress|shein|americanas|eletro|wepink/, 'Compras'],
     [/\biof\b|juros|anuidade|tarifa|seguro/, 'Cartão de crédito'],
   ];
   const sugerirCategoria = desc => { const n = U.norm(desc), r = REGRAS.find(([re]) => re.test(n)); return r ? r[1] : 'Outros'; };
@@ -92,7 +92,7 @@
   /* ---------- telas ---------- */
   function telaEscolher(erro, lendo) {
     return html`<div class="fat-pick">
-      <p class="hint">Escolha a fatura do cartão (PDF do <b>Bradesco</b>, <b>Itaú</b> ou <b>Nubank</b>, ou o CSV do Nubank). O painel lê tudo aqui no seu aparelho (nada é enviado a lugar nenhum), mostra os lançamentos para você conferir e só lança o que você marcar.</p>
+      <p class="hint">Escolha a <b>fatura do cartão</b> (PDF do Bradesco, Itaú ou Nubank, ou o CSV do Nubank) ou o <b>extrato da conta</b> (PDF do Itaú ou do Santander); o painel reconhece sozinho qual é. O painel lê tudo aqui no seu aparelho (nada é enviado a lugar nenhum), mostra os lançamentos para você conferir e só lança o que você marcar.</p>
       <label class="dropzone${lendo ? ' busy' : ''}" for="fat-file">
         ${icon('upload', 28)}
         <strong>${lendo ? 'Lendo a fatura...' : 'Toque para escolher o arquivo'}</strong>
@@ -200,7 +200,7 @@
     const me = DB.user && DB.user.nome;
     const st = { fat: null, rows: [], banco: 'Bradesco', venc: '', dataModo: 'compra', futuras: lsGet('np:fatura:futuras') !== '0', pessoa: K.PESSOAS.includes(me) ? me : K.PESSOAS[0] };
     openModal({
-      title: 'Importar fatura do cartão', wide: true, body: telaEscolher(),
+      title: 'Importar fatura ou extrato', wide: true, body: telaEscolher(),
       onMount(api) {
         const desenhar = () => { const y = api.body.scrollTop; api.body.innerHTML = String(telaRevisao(st)); api.body.scrollTop = y; };
         const escolher = (erro, lendo) => { api.body.innerHTML = String(telaEscolher(erro, lendo)); };
@@ -211,7 +211,8 @@
           escolher('', true);
           try {
             const fat = await lerArquivo(arquivo);
-            if (!fat.itens.length) { escolher('Não encontrei lançamentos de cartão nesse arquivo. Hoje eu leio faturas do Bradesco, Itaú e Nubank. Se for de outro banco, me mande um exemplo que eu adapto.'); return; }
+            if (!fat.itens.length) { escolher('Não encontrei lançamentos nesse arquivo. Hoje eu leio faturas de cartão (Bradesco, Itaú e Nubank) e extratos de conta (Itaú e Santander). Se for de outro banco, me mande um exemplo que eu adapto.'); return; }
+            if (fat.tipo === 'extrato') { global.Extrato.revisar(fat, api, () => escolher()); return; }
             st.fat = fat; st.banco = fat.banco || st.banco; st.venc = fat.venc || '';
             const t = U.norm(fat.titular || ''), nome = K.NOMES.find(n => t.includes(U.norm(n)));
             if (nome) st.pessoa = nome;
@@ -325,5 +326,5 @@
   }
 
   on('fin:fatura', abrir);
-  global.Fatura = { abrir };
+  global.Fatura = { abrir, sugerirCategoria };
 })(window);
