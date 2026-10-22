@@ -31,14 +31,38 @@
   const parcelaMes = (p, k) => addMonthsKey(monthKey(p.primeira), k - 1);
   const parcelasPagasSet = p => new Set(DB.all('parcelas_pagas').filter(x => x.parcelado_id === p.id && x.numero <= +p.parcelas).map(x => x.numero));
 
+  /* ----- fatura do cartão: a compra no crédito é paga no vencimento da fatura, não no dia da compra ----- */
+  const PAG_RE = /\b(pagto|pgto|pagamento|pag\.)/i;               // "PAGTO ANTECIPADO": pagamento da fatura anterior, não é entrada
+  const ehCredito = i => i.origem === 'parcela' || i.forma === 'Crédito';
+  function cartaoDe(banco, pessoa) {
+    const cs = DB.all('cartoes').filter(c => c.banco === (banco || 'Outro') && c.vencimento);
+    return cs.find(c => c.pessoa === pessoa) || cs.find(c => !c.pessoa || c.pessoa === 'Casal' || pessoa === 'Casal') || null;
+  }
+  const diaFechamento = c => { if (+c.fechamento >= 1 && +c.fechamento <= 31) return +c.fechamento; const f = +c.vencimento - 7; return f >= 1 ? f : f + 30; };
+  /* data de vencimento da fatura em que uma compra no crédito cai (ou null se não há cartão cadastrado) */
+  function faturaVenc(banco, pessoa, data) {
+    const c = cartaoDe(banco, pessoa); if (!c || !data) return null;
+    const fech = diaFechamento(c), venc = +c.vencimento, dia = +data.slice(8, 10);
+    let mk = monthKey(data);
+    if (dia > fech) mk = addMonthsKey(mk, 1);          // passou do fechamento: vai para a fatura seguinte
+    if (venc <= fech) mk = addMonthsKey(mk, 1);        // vencimento cai no mês seguinte ao fechamento
+    return dateInMonth(mk, venc);
+  }
+  const pagoPadrao = st => (st.tipo === 'saida' && st.forma === 'Crédito')
+    ? (() => { const fv = faturaVenc(st.banco, st.pessoa, st.data); return fv ? fv <= today() : false; })()
+    : st.data <= today();
+
   function itensDoMes(mk) {
     const out = [];
     const pagasFixa = new Set(DB.all('fixas_pagas').map(x => x.fixa_id + '|' + x.mes));
     const pagasParc = new Set(DB.all('parcelas_pagas').map(x => x.parcelado_id + '|' + x.numero));
 
     DB.all('lancamentos').forEach(l => {
-      if (monthKey(l.data) !== mk) return;
-      out.push({ key: 'lanc:' + l.id, origem: 'lanc', id: l.id, ref: l, forma: l.forma, tipo: l.tipo, descricao: l.descricao, valor: +l.valor, data: l.data, categoria: l.categoria, banco: l.banco, pessoa: l.pessoa, pago: l.pago !== false, tag: '' });
+      if (l.tipo === 'entrada' && l.forma === 'Crédito' && PAG_RE.test(l.descricao || '')) return;   // pagamento da fatura anterior: não conta como entrada
+      const dt = l.fatura || l.data;                       // compra no crédito: mês do vencimento da fatura
+      if (monthKey(dt) !== mk) return;
+      const compra = l.fatura && l.fatura !== l.data ? l.data : null;
+      out.push({ key: 'lanc:' + l.id, origem: 'lanc', id: l.id, ref: l, forma: l.forma, tipo: l.tipo, descricao: l.descricao, valor: +l.valor, data: dt, categoria: l.categoria, banco: l.banco, pessoa: l.pessoa, pago: l.pago !== false, tag: compra ? 'Compra ' + dateLabel(compra) : '' });
     });
     DB.all('fixas').forEach(f => {
       if (mk < monthKey(f.inicio)) return;
@@ -54,10 +78,11 @@
   }
 
   function resumo(items) {
-    const r = { ent: 0, sai: 0, entRec: 0, saiPago: 0 };
+    const r = { ent: 0, sai: 0, entRec: 0, saiPago: 0, conta: { ent: 0, sai: 0 }, cartao: 0, cartaoFalta: 0 };
     items.forEach(i => {
-      if (i.tipo === 'entrada') { r.ent += i.valor; if (i.pago) r.entRec += i.valor; }
-      else { r.sai += i.valor; if (i.pago) r.saiPago += i.valor; }
+      const cred = ehCredito(i);
+      if (i.tipo === 'entrada') { r.ent += i.valor; if (i.pago) r.entRec += i.valor; if (cred) { r.cartao -= i.valor; if (!i.pago) r.cartaoFalta -= i.valor; } else r.conta.ent += i.valor; }
+      else { r.sai += i.valor; if (i.pago) r.saiPago += i.valor; if (cred) { r.cartao += i.valor; if (!i.pago) r.cartaoFalta += i.valor; } else r.conta.sai += i.valor; }
     });
     r.sobra = r.ent - r.sai; r.falta = r.sai - r.saiPago;
     return r;
@@ -85,6 +110,19 @@
       </dl>
       <div class="paybar" role="img" aria-label="${pct}% das saídas já pagas"><span style="width:${pct}%"></span></div>
       ${split}
+    </div>${doisCards(r)}`;
+  }
+
+  /* dois cards: o que há na conta (débito/pix) e o que está no cartão de crédito */
+  function doisCards(r) {
+    const conta = r.conta.ent - r.conta.sai;
+    return html`<div class="duo">
+      <section class="duo-card conta"><span class="duo-label">${icon('wallet', 15)}Na conta · débito e pix</span>
+        <strong class="duo-val ${conta < 0 ? 'neg' : 'pos'}">${fmt(conta)}</strong>
+        <small>Entradas ${fmt(r.conta.ent)} − saídas ${fmt(r.conta.sai)}</small></section>
+      <section class="duo-card cartao"><span class="duo-label">${icon('card', 15)}No cartão · fatura do mês</span>
+        <strong class="duo-val">${fmt(r.cartao)}</strong>
+        <small>${r.cartao > 0 ? (r.cartaoFalta > 0.005 ? 'Falta pagar ' + fmt(r.cartaoFalta) : 'Fatura paga') : 'Nenhuma fatura neste mês'}. Sai da conta no vencimento.</small></section>
     </div>`;
   }
 
@@ -522,7 +560,7 @@
         ${fixo ? html`<div class="field"><label class="label" for="f-fim">Termina em (opcional)</label>
           <input id="f-fim" name="fim" type="date" value="${st.fim}"></div>` : ''}
       </div>
-      ${unico ? html`<label class="fat-toggle slim"><input type="checkbox" name="pago" ${(st.pagoTocado ? st.pago : st.data <= today()) ? 'checked' : ''}>
+      ${unico ? html`<label class="fat-toggle slim"><input type="checkbox" name="pago" ${(st.pagoTocado ? st.pago : pagoPadrao(st)) ? 'checked' : ''}>
         <span>${st.tipo === 'entrada' ? 'Já recebi' : 'Já foi pago'}<br><small>Desmarcado, fica em "${st.tipo === 'entrada' ? 'a receber' : 'a pagar'}" até você marcar.</small></span></label>` : ''}
       ${fixo ? html`<p class="hint">O lançamento se repete todo mês, no mesmo dia.${edit ? ' Mudanças valem para todos os meses. Para reajustar um valor, preencha "Termina em" aqui e crie outro a partir do mês do reajuste.' : ''}</p>` : ''}
 
@@ -537,6 +575,7 @@
         ${unico && st.tipo === 'saida' ? html`<div class="field"><label class="label" for="f-forma">Forma de pagamento</label>
           <select id="f-forma" name="forma">${K.FORMAS.map(f => html`<option value="${f}" ${st.forma === f ? 'selected' : ''}>${f}</option>`)}</select></div>` : ''}
       </div>
+      ${unico && st.tipo === 'saida' && st.forma === 'Crédito' ? html`<p class="hint">${(() => { const fv = faturaVenc(st.banco, st.pessoa, st.data); return fv ? html`Entra na fatura do ${st.banco} que <b>vence em ${dateLabel(fv)}</b> e diminui o limite do cartão até ser paga.` : html`Não há cartão do ${st.banco} cadastrado para ${st.pessoa}. Cadastre em Finanças › Cartões (com vencimento e fechamento) para a compra entrar na fatura certa.`; })()}</p>` : ''}
       <div class="field"><label class="label" for="f-obs">Observação (opcional)</label>
         <textarea id="f-obs" name="obs" rows="2" maxlength="300">${st.obs}</textarea></div>
 
@@ -612,7 +651,7 @@
           st[n] = e.target.value;
           if (n === 'valor' || n === 'parcelas' || n === 'data') { const p = api.body.querySelector('#f-preview'); if (p) p.textContent = previewParcelas(st); }
         });
-        api.body.addEventListener('change', e => { const n = e.target.name; if (!n || n === 'pago') return; st[n] = e.target.value; if (n === 'data' && !st.pagoTocado && st.freq === 'unico') redraw(); });
+        api.body.addEventListener('change', e => { const n = e.target.name; if (!n || n === 'pago') return; st[n] = e.target.value; if ((n === 'data' && !st.pagoTocado && st.freq === 'unico') || n === 'forma') redraw(); });
         api.body.addEventListener('submit', async e => {
           e.preventDefault();
           if (!edit && st.descricao.trim()) {
@@ -658,8 +697,10 @@
     const comum = { descricao: st.descricao.trim(), categoria: st.categoria || null, banco: st.banco, pessoa: st.pessoa, obs: st.obs.trim() || null };
     if (st.freq === 'unico') {
       const row = Object.assign({ tipo: st.tipo, valor, data: st.data, forma: st.tipo === 'saida' ? st.forma : null }, comum);
-      const pago = st.pagoTocado ? st.pago : st.data <= today();
-      if (!pago || (edit && edit.ref.pago === false)) row.pago = pago;   // só grava quando foge do padrão (coluna "pago" vem do schema.sql novo)
+      const pago = st.pagoTocado ? st.pago : pagoPadrao(st);
+      if (!pago || (edit && edit.ref.pago === false)) row.pago = pago;
+      const fv = st.tipo === 'saida' && st.forma === 'Crédito' ? faturaVenc(st.banco, st.pessoa, st.data) : null;
+      if (fv) row.fatura = fv; else if (edit && edit.ref.fatura) row.fatura = null;     // coluna "fatura" só é gravada quando há cartão   // só grava quando foge do padrão (coluna "pago" vem do schema.sql novo)
       if (edit) DB.update('lancamentos', edit.ref.id, row); else DB.insert('lancamentos', Object.assign(row, { criado_por: me }));
     } else if (st.freq === 'fixo') {
       const row = Object.assign({ tipo: st.tipo, valor, inicio: st.data, fim: st.fim || null }, comum);
@@ -822,5 +863,5 @@
     });
   }
 
-  global.Financas = { parcelaValor, mes: () => S.mes, registrar: its => { ITENS = new Map(its.map(i => [i.key, i])); }, refresh: () => refresh(), splitHtml, achaDuplicado, similares, categoriaDe, cardProjecao, listaBarras, serie, chartMeses, chaveNome, mostrarMes: mk => { S.mes = mk; refresh(); }, render, heroHtml, resumo, itensDoMes, proximos, openEntry, rowItem, togglePago, openItem, saldoCofre };
+  global.Financas = { faturaVenc, ehCredito, doisCards, parcelaValor, mes: () => S.mes, registrar: its => { ITENS = new Map(its.map(i => [i.key, i])); }, refresh: () => refresh(), splitHtml, achaDuplicado, similares, categoriaDe, cardProjecao, listaBarras, serie, chartMeses, chaveNome, mostrarMes: mk => { S.mes = mk; refresh(); }, render, heroHtml, resumo, itensDoMes, proximos, openEntry, rowItem, togglePago, openItem, saldoCofre };
 })(window);

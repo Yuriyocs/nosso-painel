@@ -814,3 +814,11 @@ input, select, textarea, button { max-width: 100%; }
 .subchips { margin: 10px 0 4px; }
 .fat-aviso { flex-basis: 100%; font-size: .8125rem; color: var(--ink-2); line-height: 1.35; }
 .limpar-lista { display: grid; gap: 8px; }
+
+/* dois cards: conta x cartão */
+.duo { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+.duo-card { display: grid; gap: 4px; padding: 14px 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+.duo-label { display: flex; align-items: center; gap: 6px; font-size: .8125rem; color: var(--ink-2); font-weight: 600; }
+.duo-val { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.duo-val.neg { color: var(--neg); } .duo-card.conta .duo-val.pos { color: var(--pos); }
+.duo-card small { color: var(--ink-2); font-size: .8125rem; line-height: 1.35; }

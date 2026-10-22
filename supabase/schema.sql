@@ -261,3 +261,7 @@ begin
     end;
   end loop;
 end $$;
+
+-- Compras no crédito entram na fatura do vencimento (mês em que o dinheiro sai) e cartões com dia de fechamento.
+alter table public.lancamentos add column if not exists fatura date;
+alter table public.cartoes add column if not exists fechamento int;

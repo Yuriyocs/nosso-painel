@@ -70,7 +70,7 @@
     return html`<article class="cartao-box">
       <button type="button" class="cc-btn" data-act="fin:cartao-edit" data-id="${c.id}" aria-label="Editar cartão ${c.banco}">${visual(c)}</button>
       <div class="fat-card">
-        <div class="fat-head"><div><span class="muted">Fatura de ${monthLabel(mk).split(' de ')[0]}</span><strong class="fat-total">${fmt(f.total)}</strong></div>
+        <div class="fat-head"><div><span class="muted">Fatura que vence em ${monthLabel(mk).split(' de ')[0]}</span><strong class="fat-total">${fmt(f.total)}</strong></div>
           <span class="status ${f.status}">${f.texto}</span></div>
         ${lim ? html`<div class="lim"><div class="lim-line"><span>Limite usado ${fmt(uso)}</span><span class="muted">de ${fmt(lim)}</span></div>
           <div class="obar ${pctUso >= 90 ? 'over' : pctUso >= 70 ? 'warn' : 'ok'}"><span style="width:${pctUso.toFixed(1)}%"></span></div>
@@ -154,8 +154,10 @@
           <select id="cc-band" name="bandeira"><option value="">Não informar</option>${K.BANDEIRAS.map(b => html`<option value="${b}" ${st.bandeira === b ? 'selected' : ''}>${b}</option>`)}</select></div>
         <div class="grid-2">
           <div class="field"><label class="label" for="cc-final">Final do cartão</label><input id="cc-final" name="final" data-num="int" inputmode="numeric" maxlength="4" placeholder="1234" value="${st.final || ''}" autocomplete="off"></div>
-          <div class="field"><label class="label" for="cc-venc">Dia do vencimento</label><input id="cc-venc" name="vencimento" data-num="int" inputmode="numeric" maxlength="2" placeholder="Ex.: 8" value="${st.vencimento || ''}" autocomplete="off"></div>
+          <div class="field"><label class="label" for="cc-venc">Dia do vencimento</label><input id="cc-venc" name="vencimento" data-num="int" inputmode="numeric" maxlength="2" placeholder="Ex.: 10" value="${st.vencimento || ''}" autocomplete="off"></div>
         </div>
+        <div class="field"><label class="label" for="cc-fech">Dia do fechamento (opcional)</label><input id="cc-fech" name="fechamento" data-num="int" inputmode="numeric" maxlength="2" placeholder="Ex.: 24" value="${st.fechamento || ''}" autocomplete="off">
+          <p class="hint">É o último dia que a compra entra na fatura atual (está no app do banco). Compras depois dele vão para a fatura seguinte. Sem informar, o painel assume 7 dias antes do vencimento.</p></div>
         <div class="grid-2">
           <div class="field"><label class="label" for="cc-lim">Limite (opcional)</label><input id="cc-lim" name="limite" data-num="money" maxlength="13" inputmode="decimal" placeholder="0,00" value="${st.limite ? moneyInput(st.limite) : ''}" autocomplete="off"></div>
           <div class="field"><label class="label" for="cc-pes">De quem</label><select id="cc-pes" name="pessoa">${K.PESSOAS.map(p => html`<option value="${p}" ${st.pessoa === p ? 'selected' : ''}>${p}</option>`)}</select></div>
@@ -194,12 +196,15 @@
           }
           const venc = f.vencimento.value.replace(/\D/g, '');
           if (venc && (+venc < 1 || +venc > 31)) return falha('O dia do vencimento vai de 1 a 31.');
+          const fech = f.fechamento.value.replace(/\D/g, '');
+          if (fech && (+fech < 1 || +fech > 31)) return falha('O dia do fechamento vai de 1 a 31.');
           const final = f.final.value.replace(/\D/g, '');
           if (final && final.length !== 4) return falha('O final do cartão tem 4 números.');
           const lim = f.limite.value.trim() ? parseMoney(f.limite.value) : 0;
           if (f.limite.value.trim() && !(lim > 0)) return falha('Confira o valor do limite.');
           if (f.banco.value === '__novo') await DB.insert('bancos', { nome: banco, cor: corNova });
           const row = { banco, bandeira: f.bandeira.value || null, final: final || null, apelido: f.apelido.value.trim() || null, vencimento: venc ? +venc : null, limite: lim || null, pessoa: f.pessoa.value };
+          if (fech) row.fechamento = +fech; else if (edit && c.fechamento) row.fechamento = null;     // coluna só é gravada quando usada
           if (edit) await DB.update('cartoes', c.id, row); else await DB.insert('cartoes', row);
           api.close(); toast(edit ? 'Cartão atualizado' : 'Cartão cadastrado');
         });

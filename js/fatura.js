@@ -85,7 +85,7 @@
   function marcarDuplicados(st) {
     st.rows.forEach(r => {
       r.dup = classificar(r, st);
-      if (!r.tocado) r.sel = !r.credito && !(r.dup && r.dup.nivel === 'igual');
+      r.sel = r.pagamento ? false : (r.tocado ? r.sel : !r.credito && !(r.dup && r.dup.nivel === 'igual'));
     });
   }
 
@@ -140,12 +140,7 @@
       </div>
       <div class="field"><span class="label">De quem é esta fatura</span>
         <div class="chips" role="group" aria-label="Pessoa">${K.PESSOAS.map(p => html`<button type="button" class="chip${st.pessoa === p ? ' on' : ''}" data-g="pessoa" data-v="${p}" aria-pressed="${st.pessoa === p}">${p}</button>`)}</div></div>
-      <div class="field"><span class="label">Data dos lançamentos</span>
-        <div class="seg full" role="group" aria-label="Data dos lançamentos">
-          <button type="button" class="seg-btn${st.dataModo === 'venc' ? ' on' : ''}" data-g="dataModo" data-v="venc" aria-pressed="${st.dataModo === 'venc'}">Vencimento da fatura</button>
-          <button type="button" class="seg-btn${st.dataModo === 'compra' ? ' on' : ''}" data-g="dataModo" data-v="compra" aria-pressed="${st.dataModo === 'compra'}">Dia da compra</button>
-        </div></div>
-      <p class="hint">${st.dataModo === 'venc' ? 'Tudo entra no mês em que a fatura é paga. Bom para ver quanto sai do bolso em cada mês.' : 'Cada compra entra no dia em que foi feita, então pode cair em meses anteriores e o total do mês deixa de bater com o que foi pago na fatura. Para conferir o quanto saiu do bolso, prefira "Vencimento da fatura".'}</p>
+      <p class="hint">Tudo entra no mês do <b>vencimento da fatura</b>, que é quando o dinheiro sai da conta. As compras feitas depois do fechamento entram na fatura seguinte, importada depois.</p>
 
       ${nParcelados ? html`<label class="fat-toggle"><input type="checkbox" data-g="futuras" ${st.futuras ? 'checked' : ''}>
         <span><b>Criar as parcelas dos próximos meses</b><br><small>${st.futuras
@@ -162,14 +157,14 @@
       </div>
 
       <ul class="fat-list">${rows.map(r => html`<li class="fat-row${r.sel ? '' : ' off'}${r.dup && r.dup.nivel === 'igual' ? ' dup' : ''}">
-        <label class="fat-check-wrap"><input type="checkbox" data-i="${r.i}" data-f="sel" ${r.sel ? 'checked' : ''} aria-label="Lançar ${r.desc}"></label>
+        <label class="fat-check-wrap"><input type="checkbox" data-i="${r.i}" data-f="sel" ${r.sel ? 'checked' : ''} ${r.pagamento ? 'disabled' : ''} aria-label="Lançar ${r.desc}"></label>
         <div class="fat-main">
           <input class="fat-desc" data-i="${r.i}" data-f="desc" value="${r.desc}" maxlength="80" aria-label="Nome">
           <div class="fat-meta">
             <span>${r.dm}</span>
             ${r.parcela ? html`<span class="badge">parcela ${r.parcela.p}/${r.parcela.n}${viraParcelado(r, st) && futuras(r) ? ` · +${futuras(r)} futuras` : ''}</span>` : ''}
             ${r.pagamento ? html`<span class="badge warn">pagamento da fatura anterior</span>` : r.credito ? html`<span class="badge in">crédito / estorno</span>` : ''}
-            ${r.pagamento && r.sel ? html`<span class="fat-aviso">Não é entrada de dinheiro: é o pagamento da fatura passada. Marcar aumenta as entradas do mês sem ter entrado nada.</span>` : ''}
+            ${r.pagamento ? html`<span class="fat-aviso">Não entra nos cálculos: o pagamento já aparece como a saída da fatura anterior.</span>` : ''}
             ${r.dup ? html`<span class="badge ${r.dup.nivel === 'igual' ? 'warn' : ''}">${r.dup.texto}</span>` : ''}
           </div>
           ${!r.credito ? html`<div class="fat-sel">
@@ -193,7 +188,7 @@
   function abrir() {
     closeAllModals();
     const me = DB.user && DB.user.nome;
-    const st = { fat: null, rows: [], banco: 'Bradesco', venc: '', dataModo: lsGet('np:fatura:data') || 'venc', futuras: lsGet('np:fatura:futuras') !== '0', pessoa: K.PESSOAS.includes(me) ? me : K.PESSOAS[0] };
+    const st = { fat: null, rows: [], banco: 'Bradesco', venc: '', dataModo: 'venc', futuras: lsGet('np:fatura:futuras') !== '0', pessoa: K.PESSOAS.includes(me) ? me : K.PESSOAS[0] };
     openModal({
       title: 'Importar fatura do cartão', wide: true, body: telaEscolher(),
       onMount(api) {
@@ -251,7 +246,7 @@
             desenhar(); return;
           }
           const all = e.target.closest('[data-all]');
-          if (all) { st.rows.forEach(r => { r.sel = all.dataset.all === '1'; r.tocado = true; }); desenhar(); return; }
+          if (all) { st.rows.forEach(r => { r.sel = !r.pagamento && all.dataset.all === '1'; r.tocado = true; }); desenhar(); return; }
           if (e.target.closest('[data-troca]')) { escolher(); return; }
           if (e.target.closest('[data-ok]')) lancar(st, api);
         });
