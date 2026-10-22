@@ -14,7 +14,8 @@
   function dados(mk) {
     const dias = {};
     const get = d => dias[d] || (dias[d] = vazio());
-    const itens = global.Financas.itensDoMes(mk);
+    const F = global.Financas;
+    const itens = F.itensDoMes(mk).filter(i => !F.ehCredito(i)).concat(F.faturasDoMes(mk));   // compras no crédito aparecem como uma fatura no dia do vencimento
     MAP = new Map(itens.map(i => [i.key, i]));
     itens.forEach(it => get(it.data)[it.tipo === 'entrada' ? 'entradas' : 'saidas'].push(it));
     if (S.extra) {

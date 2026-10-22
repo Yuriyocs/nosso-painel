@@ -52,29 +52,89 @@
     ? (() => { const fv = faturaVenc(st.banco, st.pessoa, st.data); return fv ? fv <= today() : false; })()
     : st.data <= today();
 
+  /* mês do gasto: compra no crédito conta no mês em que a fatura FECHA (a fatura que fecha em setembro é o gasto de setembro) */
+  function mesGasto(l) {
+    if (l.forma !== 'Crédito' || !l.fatura) return monthKey(l.data);
+    const c = cartaoDe(l.banco, l.pessoa); if (!c) return monthKey(l.data);
+    return +c.vencimento <= diaFechamento(c) ? addMonthsKey(monthKey(l.fatura), -1) : monthKey(l.fatura);
+  }
+  function itemLanc(l) {
+    const credito = l.forma === 'Crédito', venc = credito ? (l.fatura || l.data) : l.data;
+    return { key: 'lanc:' + l.id, origem: 'lanc', id: l.id, ref: l, forma: l.forma, tipo: l.tipo, descricao: l.descricao, valor: +l.valor, data: l.data, venc, comp: mesGasto(l), categoria: l.categoria, banco: l.banco, pessoa: l.pessoa, pago: l.pago !== false, tag: credito && l.fatura && l.fatura !== l.data ? 'Fatura ' + dateLabel(l.fatura) : '' };
+  }
+  const ehPagamentoFatura = l => l.tipo === 'entrada' && l.forma === 'Crédito' && PAG_RE.test(l.descricao || '');   // pagamento da fatura anterior: não é entrada
+  function itemParcela(p, k, pagas) {
+    const data = dateInMonth(parcelaMes(p, k), +p.primeira.slice(8, 10));
+    return { key: 'parc:' + p.id + ':' + k, origem: 'parcela', id: p.id, ref: p, numero: k, tipo: 'saida', descricao: p.descricao, valor: parcelaValor(p, k), data, venc: faturaVenc(p.banco, p.pessoa, data) || data, categoria: p.categoria, banco: p.banco, pessoa: p.pessoa, pago: pagas.has(p.id + '|' + k), tag: `Parcela ${k}/${p.parcelas}` };
+  }
+
+  /* gasto do mês: cada compra no mês em que foi feita (competência) */
   function itensDoMes(mk) {
     const out = [];
     const pagasFixa = new Set(DB.all('fixas_pagas').map(x => x.fixa_id + '|' + x.mes));
     const pagasParc = new Set(DB.all('parcelas_pagas').map(x => x.parcelado_id + '|' + x.numero));
 
     DB.all('lancamentos').forEach(l => {
-      if (l.tipo === 'entrada' && l.forma === 'Crédito' && PAG_RE.test(l.descricao || '')) return;   // pagamento da fatura anterior: não conta como entrada
-      const dt = l.fatura || l.data;                       // compra no crédito: mês do vencimento da fatura
-      if (monthKey(dt) !== mk) return;
-      const compra = l.fatura && l.fatura !== l.data ? l.data : null;
-      out.push({ key: 'lanc:' + l.id, origem: 'lanc', id: l.id, ref: l, forma: l.forma, tipo: l.tipo, descricao: l.descricao, valor: +l.valor, data: dt, categoria: l.categoria, banco: l.banco, pessoa: l.pessoa, pago: l.pago !== false, tag: compra ? 'Compra ' + dateLabel(compra) : '' });
+      if (ehPagamentoFatura(l)) return;
+      const it = itemLanc(l);
+      if (it.comp === mk) out.push(it);
     });
     DB.all('fixas').forEach(f => {
       if (mk < monthKey(f.inicio)) return;
       if (f.fim && mk > monthKey(f.fim)) return;
-      out.push({ key: 'fixa:' + f.id + ':' + mk, origem: 'fixa', id: f.id, ref: f, mes: mk, tipo: f.tipo, descricao: f.descricao, valor: +f.valor, data: dateInMonth(mk, +f.inicio.slice(8, 10)), categoria: f.categoria, banco: f.banco, pessoa: f.pessoa, pago: pagasFixa.has(f.id + '|' + mk), tag: 'Todo mês' });
+      const data = dateInMonth(mk, +f.inicio.slice(8, 10));
+      out.push({ key: 'fixa:' + f.id + ':' + mk, origem: 'fixa', id: f.id, ref: f, mes: mk, tipo: f.tipo, descricao: f.descricao, valor: +f.valor, data, venc: data, categoria: f.categoria, banco: f.banco, pessoa: f.pessoa, pago: pagasFixa.has(f.id + '|' + mk), tag: 'Todo mês' });
     });
     DB.all('parcelados').forEach(p => {
       const k = monthDiff(monthKey(p.primeira), mk) + 1;
       if (k < 1 || k > +p.parcelas) return;
-      out.push({ key: 'parc:' + p.id + ':' + k, origem: 'parcela', id: p.id, ref: p, numero: k, tipo: 'saida', descricao: p.descricao, valor: parcelaValor(p, k), data: dateInMonth(mk, +p.primeira.slice(8, 10)), categoria: p.categoria, banco: p.banco, pessoa: p.pessoa, pago: pagasParc.has(p.id + '|' + k), tag: `Parcela ${k}/${p.parcelas}` });
+      out.push(itemParcela(p, k, pagasParc));
     });
     return out;
+  }
+
+  /* fatura do cartão: compras no crédito que vencem no mês (é quando o dinheiro sai da conta) */
+  function itensFatura(mk) {
+    const out = [], pagasParc = new Set(DB.all('parcelas_pagas').map(x => x.parcelado_id + '|' + x.numero));
+    DB.all('lancamentos').forEach(l => {
+      if (l.forma !== 'Crédito' || ehPagamentoFatura(l)) return;
+      if (monthKey(l.fatura || l.data) === mk) out.push(itemLanc(l));
+    });
+    DB.all('parcelados').forEach(p => {
+      const kc = monthDiff(monthKey(p.primeira), mk) + 1;
+      for (let k = Math.max(1, kc - 2); k <= Math.min(+p.parcelas, kc + 2); k++) {
+        const it = itemParcela(p, k, pagasParc);
+        if (monthKey(it.venc) === mk) out.push(it);
+      }
+    });
+    return out;
+  }
+  /* uma linha por fatura (banco + pessoa + vencimento), para calendário e "próximos vencimentos" */
+  function faturasDoMes(mk, filtro) {
+    const m = new Map();
+    itensFatura(mk).filter(i => !filtro || filtro(i)).forEach(i => {
+      const k = [i.banco || 'Outro', i.pessoa || '', i.venc].join('|');
+      const g = m.get(k) || { key: 'fat:' + k, origem: 'fatura', itens: [], tipo: 'saida', valor: 0, data: i.venc, venc: i.venc, banco: i.banco, pessoa: i.pessoa, categoria: null, tag: 'Fatura do cartão', pago: true };
+      g.itens.push(i); g.valor += i.tipo === 'entrada' ? -i.valor : i.valor; if (!i.pago) g.pago = false;
+      m.set(k, g);
+    });
+    return [...m.values()].map(g => {
+      const c = cartaoDe(g.banco, g.pessoa);
+      return Object.assign(g, { descricao: 'Fatura ' + (g.banco || 'Outro') + (c && c.final ? ' final ' + c.final : '') });
+    }).filter(g => g.valor > 0.004);
+  }
+  /* o que sai da conta no mês por causa das faturas */
+  function caixaInfo(mk, filtro) {
+    const its = itensFatura(mk).filter(i => !filtro || filtro(i));
+    const total = its.reduce((a, i) => a + (i.tipo === 'entrada' ? -i.valor : i.valor), 0);
+    const falta = its.filter(i => !i.pago).reduce((a, i) => a + (i.tipo === 'entrada' ? -i.valor : i.valor), 0);
+    const datas = [...new Set(its.map(i => i.venc))].sort();
+    return { total, falta, venc: datas[0] || null };
+  }
+  /* "Fecha dia 27 · vence 10/11" do cartão (ou dos cartões) que passam no filtro */
+  function cicloTexto(filtroBanco, filtroPessoa) {
+    const cs = DB.all('cartoes').filter(c => c.vencimento && (!filtroBanco || filtroBanco === 'todos' || c.banco === filtroBanco) && (!filtroPessoa || filtroPessoa === 'todos' || !c.pessoa || c.pessoa === 'Casal' || c.pessoa === filtroPessoa));
+    return cs.slice(0, 2).map(c => `${cs.length > 1 ? c.banco + ': ' : ''}fecha dia ${diaFechamento(c)} · vence ${dateLabel(faturaVenc(c.banco, c.pessoa, today()))}`).join(' | ');
   }
 
   function resumo(items) {
@@ -93,13 +153,14 @@
 
   function proximos(dias = 7, limite = 5) {
     const t0 = today(), mk = monthKey(t0), ate = U.addDays(t0, dias);
-    return itensDoMes(mk).concat(itensDoMes(addMonthsKey(mk, 1)))
+    const ms = [mk, addMonthsKey(mk, 1)];
+    return ms.flatMap(m => itensDoMes(m).filter(i => !ehCredito(i)).concat(faturasDoMes(m)))
       .filter(i => i.tipo === 'saida' && !i.pago && i.data <= ate)
       .sort((a, b) => a.data.localeCompare(b.data)).slice(0, limite);
   }
 
   /* ---------- peças de tela ---------- */
-  function heroHtml(r, { split = '', label = 'Sobra prevista', delta = null } = {}) {
+  function heroHtml(r, { split = '', label = 'Sobra prevista', delta = null, caixa = null, ciclo = '' } = {}) {
     const pct = r.sai > 0 ? Math.min(100, Math.round(r.saiPago / r.sai * 100)) : 0;
     return html`<div class="hero">
       <div class="hero-main"><span class="hero-label">${label}</span><span class="hero-value ${r.sobra < 0 ? 'neg' : 'pos'}">${fmt(r.sobra)}</span></div>
@@ -110,19 +171,20 @@
       </dl>
       <div class="paybar" role="img" aria-label="${pct}% das saídas já pagas"><span style="width:${pct}%"></span></div>
       ${split}
-    </div>${doisCards(r)}`;
+    </div>${doisCards(r, caixa, ciclo)}`;
   }
 
   /* dois cards: o que há na conta (débito/pix) e o que está no cartão de crédito */
-  function doisCards(r) {
-    const conta = r.conta.ent - r.conta.sai;
+  function doisCards(r, c, ciclo) {
+    c = c || { total: 0, falta: 0, venc: null };
+    const conta = r.conta.ent - r.conta.sai - c.total;
     return html`<div class="duo">
-      <section class="duo-card conta"><span class="duo-label">${icon('wallet', 15)}Na conta · débito e pix</span>
+      <section class="duo-card conta"><span class="duo-label">${icon('wallet', 15)}Na conta · débito, pix e faturas</span>
         <strong class="duo-val ${conta < 0 ? 'neg' : 'pos'}">${fmt(conta)}</strong>
-        <small>Entradas ${fmt(r.conta.ent)} − saídas ${fmt(r.conta.sai)}</small></section>
-      <section class="duo-card cartao"><span class="duo-label">${icon('card', 15)}No cartão · fatura do mês</span>
+        <small>Entradas ${fmt(r.conta.ent)} − débito/pix ${fmt(r.conta.sai)}${c.total > 0.004 ? html` − fatura que vence ${c.venc ? 'dia ' + dateLabel(c.venc) : 'no mês'} (${fmt(c.total)}${c.falta > 0.004 ? ', falta pagar' : ', paga'})` : ''}</small></section>
+      <section class="duo-card cartao"><span class="duo-label">${icon('card', 15)}Gasto no cartão de crédito</span>
         <strong class="duo-val">${fmt(r.cartao)}</strong>
-        <small>${r.cartao > 0 ? (r.cartaoFalta > 0.005 ? 'Falta pagar ' + fmt(r.cartaoFalta) : 'Fatura paga') : 'Nenhuma fatura neste mês'}. Sai da conta no vencimento.</small></section>
+        <small>Compras cuja fatura fecha neste mês; saem da conta no vencimento.${ciclo ? ' ' + ciclo.charAt(0).toUpperCase() + ciclo.slice(1) + '.' : ''}</small></section>
     </div>`;
   }
 
@@ -268,7 +330,7 @@
         </div>
       </div>
 
-      ${heroHtml(r, { split: splitHtml(base), delta, label: (S.pessoa !== 'todos' || S.banco !== 'todos') ? 'Sobra prevista (filtro ativo)' : 'Sobra prevista' })}
+      ${heroHtml(r, { split: splitHtml(base), delta, caixa: caixaInfo(mk, i => passaBanco(i) && passaPessoa(i)), ciclo: mk === monthKey(today()) ? cicloTexto(S.banco, S.pessoa) : '', label: (S.pessoa !== 'todos' || S.banco !== 'todos') ? 'Sobra prevista (filtro ativo)' : 'Sobra prevista' })}
 
       <div class="cols">
         <div class="col-main">
@@ -470,6 +532,7 @@
   on('fin:mes', el => { S.mes = el.dataset.mk; if (U.route.nome === 'financas') refresh(); else location.hash = '#/financas'; });
 
   function togglePago(it) {
+    if (it.origem === 'fatura') { const alvo = !it.pago; DB.lote(() => it.itens.forEach(x => { if (x.pago !== alvo) togglePago(x); }), 'financas', `${alvo ? 'marcou como paga' : 'reabriu'} a ${it.descricao.toLowerCase()}`); return; }
     if (it.origem === 'lanc') {
       DB.update('lancamentos', it.id, { pago: !it.pago });
     } else if (it.origem === 'fixa') {
@@ -481,6 +544,7 @@
     }
   }
   function openItem(it) {
+    if (it.origem === 'fatura') { global.location.hash = '#/financas/cartoes'; return; }
     if (it.origem === 'parcela') openParcelado(it.id); else openEntry({ edit: { origem: it.origem, ref: it.ref } });
   }
   on('fin:aba', el => { S.aba = el.dataset.v; refresh(); });
@@ -863,5 +927,5 @@
     });
   }
 
-  global.Financas = { faturaVenc, ehCredito, doisCards, parcelaValor, mes: () => S.mes, registrar: its => { ITENS = new Map(its.map(i => [i.key, i])); }, refresh: () => refresh(), splitHtml, achaDuplicado, similares, categoriaDe, cardProjecao, listaBarras, serie, chartMeses, chaveNome, mostrarMes: mk => { S.mes = mk; refresh(); }, render, heroHtml, resumo, itensDoMes, proximos, openEntry, rowItem, togglePago, openItem, saldoCofre };
+  global.Financas = { itensFatura, faturasDoMes, caixaInfo, cicloTexto, faturaVenc, ehCredito, doisCards, parcelaValor, mes: () => S.mes, registrar: its => { ITENS = new Map(its.map(i => [i.key, i])); }, refresh: () => refresh(), splitHtml, achaDuplicado, similares, categoriaDe, cardProjecao, listaBarras, serie, chartMeses, chaveNome, mostrarMes: mk => { S.mes = mk; refresh(); }, render, heroHtml, resumo, itensDoMes, proximos, openEntry, rowItem, togglePago, openItem, saldoCofre };
 })(window);

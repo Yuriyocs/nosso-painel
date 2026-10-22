@@ -140,7 +140,7 @@
       </div>
       <div class="field"><span class="label">De quem é esta fatura</span>
         <div class="chips" role="group" aria-label="Pessoa">${K.PESSOAS.map(p => html`<button type="button" class="chip${st.pessoa === p ? ' on' : ''}" data-g="pessoa" data-v="${p}" aria-pressed="${st.pessoa === p}">${p}</button>`)}</div></div>
-      <p class="hint">Tudo entra no mês do <b>vencimento da fatura</b>, que é quando o dinheiro sai da conta. As compras feitas depois do fechamento entram na fatura seguinte, importada depois.</p>
+      <p class="hint">Cada compra entra no <b>mês em que foi feita</b> (é o gasto daquele mês). A fatura vence em <b>${st.venc ? dateLabel(st.venc) : 'o vencimento'}</b>: é quando o dinheiro sai da conta, e o painel já concilia isso sozinho.</p>
 
       ${nParcelados ? html`<label class="fat-toggle"><input type="checkbox" data-g="futuras" ${st.futuras ? 'checked' : ''}>
         <span><b>Criar as parcelas dos próximos meses</b><br><small>${st.futuras
@@ -184,11 +184,21 @@
       ${totalEnt ? html`<p class="hint">Créditos marcados entram como <b>entrada</b> (${fmt(totalEnt)}).</p>` : ''}`;
   }
 
+  /* data (dentro do mês das compras da fatura) usada nas parcelas: cai no mês do ciclo, não no do vencimento */
+  function dataCiclo(st) {
+    const cs = DB.all('cartoes').filter(c => c.banco === st.banco && c.vencimento);
+    const c = cs.find(x => x.pessoa === st.pessoa) || cs[0] || null;
+    const fech = st.fat && st.fat.fecha ? +st.fat.fecha.slice(8, 10) : (c && +c.fechamento) || 0;
+    if (!fech || !st.venc) return st.venc;
+    const mk = +st.venc.slice(8, 10) <= fech ? U.addMonthsKey(monthKey(st.venc), -1) : monthKey(st.venc);
+    return U.dateInMonth(mk, fech);
+  }
+
   /* ---------- abrir ---------- */
   function abrir() {
     closeAllModals();
     const me = DB.user && DB.user.nome;
-    const st = { fat: null, rows: [], banco: 'Bradesco', venc: '', dataModo: 'venc', futuras: lsGet('np:fatura:futuras') !== '0', pessoa: K.PESSOAS.includes(me) ? me : K.PESSOAS[0] };
+    const st = { fat: null, rows: [], banco: 'Bradesco', venc: '', dataModo: 'compra', futuras: lsGet('np:fatura:futuras') !== '0', pessoa: K.PESSOAS.includes(me) ? me : K.PESSOAS[0] };
     openModal({
       title: 'Importar fatura do cartão', wide: true, body: telaEscolher(),
       onMount(api) {
@@ -269,7 +279,7 @@
         /* compra parcelada: cria todas as parcelas (as já pagas ficam marcadas, as futuras ficam a pagar) */
         const id = uid(), { p, n } = r.parcela;
         promessas.push(DB.insert('parcelados', {
-          id, descricao: r.desc, valor_total: Math.round(r.valor * n * 100) / 100, parcelas: n, primeira: addMonthsDate(st.venc, -(p - 1)),
+          id, descricao: r.desc, valor_total: Math.round(r.valor * n * 100) / 100, parcelas: n, primeira: addMonthsDate(dataCiclo(st), -(p - 1)),
           categoria: r.categoria || null, banco: st.banco, pessoa: r.pessoa, obs: `${obsBase}. Importada na parcela ${p}/${n}.`,
         }, { silent: true }));
         for (let k = 1; k <= p; k++) pagas.push({ parcelado_id: id, numero: k });
@@ -278,7 +288,7 @@
       }
       const data = dataRow(r, st);
       if (!primeira || data < primeira) primeira = data;
-      promessas.push(DB.insert('lancamentos', Object.assign(data > U.today() ? { pago: false } : {}, {      // fatura que ainda não venceu fica "a pagar"
+      promessas.push(DB.insert('lancamentos', Object.assign(st.venc > U.today() ? { pago: false } : {}, data !== st.venc ? { fatura: st.venc } : {}, {      // fatura que ainda não venceu fica "a pagar"
         tipo: r.credito ? 'entrada' : 'saida', descricao: rotuloRow(r), valor: r.valor, data,
         forma: 'Crédito', categoria: r.credito ? null : (r.categoria || null), banco: st.banco, pessoa: r.pessoa,
         obs: obsBase + (st.dataModo === 'venc' && r.dm ? `, compra em ${r.dm}` : ''), criado_por: me,
@@ -289,6 +299,21 @@
     await Promise.all(promessas);                         // as parcelas pagas dependem da compra já existir
     pagas.forEach(x => DB.insert('parcelas_pagas', x, { silent: true }));
     lsSet('np:ultimoBanco', st.banco);
+    /* cartão: guarda o dia de fechamento lido do PDF; se o cartão ainda não existe, cadastra (vencimento e fechamento vêm da fatura) */
+    {
+      const cs = DB.all('cartoes').filter(c => c.banco === st.banco);
+      const c = cs.find(x => x.pessoa === st.pessoa) || cs.find(x => !x.pessoa || x.pessoa === 'Casal') || null;
+      const fechDia = st.fat && st.fat.fecha ? +st.fat.fecha.slice(8, 10) : null;
+      if (c) {
+        const patch = {};
+        if (!c.vencimento && st.venc) patch.vencimento = +st.venc.slice(8, 10);
+        if (!c.fechamento && fechDia) patch.fechamento = fechDia;
+        if (Object.keys(patch).length) DB.update('cartoes', c.id, patch, { silent: true });
+      } else if (st.venc && !cs.length) {
+        DB.insert('cartoes', Object.assign({ banco: st.banco, final: (st.fat && st.fat.cartao) || null, vencimento: +st.venc.slice(8, 10), pessoa: st.pessoa }, fechDia ? { fechamento: fechDia } : {}), { silent: true });
+        toast(`Cartão ${st.banco} cadastrado a partir da fatura (confira em Cartões)`);
+      }
+    }
     api.close(); closeAllModals();
     global.Financas.mostrarMes(monthKey(st.venc));
     const partes = [];

@@ -67,6 +67,8 @@
     const out = { banco: 'Bradesco', venc: null, total: null, cartao: null, itens: [] };
     const mv = tudo.match(/Vencimento[\s\S]{0,400}?(\d{2})\/(\d{2})\/(\d{4})/);
     if (mv) out.venc = `${mv[3]}-${mv[2]}-${mv[1]}`;
+    const mf = tudo.match(/fechamento[\s\S]{0,80}?(\d{2})\/(\d{2})\/(\d{4})/i);
+    if (mf) out.fecha = `${mf[3]}-${mf[2]}-${mf[1]}`;                 // fechamento da PRÓXIMA fatura (dá o dia de fechamento do cartão)
     const mt = tudo.match(/Total da fatura em real\s*R?\$?\s*([\d.]+,\d{2})/i) || tudo.match(/Total de fatura[\s\S]{0,200}?R\$\s*([\d.]+,\d{2})/i);
     if (mt) out.total = toNum(mt[1]);
     const mc = tudo.match(/(\d{4})\s+X{4}\s+X{4}\s+(\d{4})/);

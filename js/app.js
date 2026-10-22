@@ -173,7 +173,7 @@
       <div class="home-grid">
         <section class="block hm-fin">
           <div class="block-head"><h2>Finanças de ${monthLabel(mk)}</h2><a class="link" href="#/financas">Abrir</a></div>
-          ${global.Financas.heroHtml(r, { delta, split: global.Financas.splitHtml(global.Financas.itensDoMes(mk)) })}
+          ${global.Financas.heroHtml(r, { delta, split: global.Financas.splitHtml(global.Financas.itensDoMes(mk)), caixa: global.Financas.caixaInfo(mk), ciclo: global.Financas.cicloTexto() })}
         </section>
 
         <div class="hm-proj">${global.Financas.cardProjecao(mk, false)}</div>

@@ -66,7 +66,7 @@
 
   function caixa(c, mk, its) {
     const f = faturaDe(c, mk, its), uso = c.limite > 0 ? usoLimite(c) : 0, lim = +c.limite || 0, pctUso = lim ? Math.min(100, uso / lim * 100) : 0;
-    const prox = [1, 2, 3].map(n => { const m = addMonthsKey(mk, n); return [m, totalFatura(F().itensDoMes(m).filter(i => pertence(c, i)))]; }).filter(([, v]) => v > 0);
+    const prox = [1, 2, 3].map(n => { const m = addMonthsKey(mk, n); return [m, totalFatura(F().itensFatura(m).filter(i => pertence(c, i)))]; }).filter(([, v]) => v > 0);
     return html`<article class="cartao-box">
       <button type="button" class="cc-btn" data-act="fin:cartao-edit" data-id="${c.id}" aria-label="Editar cartão ${c.banco}">${visual(c)}</button>
       <div class="fat-card">
@@ -87,14 +87,14 @@
 
   function view() {
     const mk = F().mes(), atual = mk === monthKey(today());
-    const lista = cartoes(), todos = F().itensDoMes(mk);
+    const lista = cartoes(), todos = F().itensFatura(mk);
     F().registrar(todos);
     const por = atribuir(lista, todos);
     const faturas = lista.map(c => ({ c, its: por.get(c.id), f: faturaDe(c, mk, por.get(c.id)) }));
     const totalMes = faturas.reduce((a, x) => a + x.f.total, 0);
     const aPagar = faturas.reduce((a, x) => a + (x.f.paga ? 0 : x.f.total), 0);
     const semCartao = [...new Set(todos.filter(noCredito).filter(i => i.tipo === 'saida' && !lista.some(c => pertence(c, i))).map(i => i.banco || 'Outro'))];
-    const meses = [0, 1, 2, 3, 4, 5].map(n => { const m = addMonthsKey(mk, n), its = n ? F().itensDoMes(m) : todos; return [m, lista.reduce((a, c) => a + totalFatura(its.filter(i => pertence(c, i))), 0)]; });
+    const meses = [0, 1, 2, 3, 4, 5].map(n => { const m = addMonthsKey(mk, n), its = n ? F().itensFatura(m) : todos; return [m, lista.reduce((a, c) => a + totalFatura(its.filter(i => pertence(c, i))), 0)]; });
     const maxM = Math.max(1, ...meses.map(([, v]) => v));
 
     return html`
@@ -263,12 +263,12 @@
   on('fin:cartao-ver', el => { const id = el.dataset.id; if (aberto.has(id)) aberto.delete(id); else aberto.add(id); F().refresh(); });
   on('fin:cartao-paga', el => {
     const c = DB.find('cartoes', el.dataset.id); if (!c) return;
-    const mk = F().mes(), todos = F().itensDoMes(mk), lista = cartoes();
+    const mk = F().mes(), todos = F().itensFatura(mk), lista = cartoes();
     const its = atribuir(lista, todos).get(c.id) || [];
     const abertos = its.filter(i => !i.pago), reabrir = !abertos.length;
     const alvo = reabrir ? its.filter(i => i.pago) : abertos;
     DB.lote(() => alvo.forEach(i => F().togglePago(i)), 'financas', `${reabrir ? 'reabriu' : 'marcou como paga'} a fatura ${c.banco}${c.final ? ' final ' + c.final : ''} de ${monthLabel(mk)}`);
-    toast(reabrir ? 'Fatura reaberta' : 'Fatura marcada como paga', '', { label: 'Desfazer', fn: () => DB.lote(() => alvo.forEach(i => { const atual = F().itensDoMes(mk).find(x => x.key === i.key); if (atual && atual.pago !== i.pago) F().togglePago(atual); }), 'financas', `desfez a fatura ${c.banco}`) });
+    toast(reabrir ? 'Fatura reaberta' : 'Fatura marcada como paga', '', { label: 'Desfazer', fn: () => DB.lote(() => alvo.forEach(i => { const atual = F().itensFatura(mk).find(x => x.key === i.key); if (atual && atual.pago !== i.pago) F().togglePago(atual); }), 'financas', `desfez a fatura ${c.banco}`) });
   });
 
   global.Cartoes = { view, cartoes, pertence };
